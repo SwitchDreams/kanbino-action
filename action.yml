@@ -1,0 +1,306 @@
+name: 'Kanbino Agent'
+description: 'Execute Kanbino AI agent for task implementation using official Claude Code action'
+author: 'Switch Dreams'
+
+branding:
+  icon: 'code'
+  color: 'blue'
+
+inputs:
+  mode:
+    description: 'Execution mode (plan or execute)'
+    required: true
+  task_execution_id:
+    description: 'Task execution ID from Switch Kanban'
+    required: true
+  callback_url:
+    description: 'Callback URL for status updates'
+    required: false
+    default: 'https://app.switchkanban.com.br'
+  task_prompt:
+    description: 'Task prompt with instructions'
+    required: true
+  switch_kanban_api_key:
+    description: 'Switch Kanban API key for callbacks'
+    required: true
+  claude_api_key:
+    description: 'Claude API key (Anthropic)'
+    required: false
+  claude_code_oauth_token:
+    description: 'Claude Code OAuth token'
+    required: false
+  github_token:
+    description: 'GitHub token for PR creation'
+    required: false
+    default: ${{ github.token }}
+  additional_allowed_tools:
+    description: 'Additional allowed tools to append to defaults (comma-separated, e.g., "Bash(bundle exec rubocop:*),Bash(bundle exec rspec:*)")'
+    required: false
+    default: ''
+
+outputs:
+  has_changes:
+    description: 'Whether code changes were made'
+    value: ${{ steps.check_changes.outputs.has_changes }}
+  pull_request_url:
+    description: 'URL of created pull request'
+    value: ${{ steps.create_pr.outputs.pull-request-url }}
+  pull_request_number:
+    description: 'Number of created pull request'
+    value: ${{ steps.create_pr.outputs.pull-request-number }}
+  status:
+    description: 'Execution status (success, failed, no_changes)'
+    value: ${{ steps.determine_status.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Send started callback
+      uses: fjogeleit/http-request-action@v1
+      with:
+        url: '${{ inputs.callback_url }}/api/v1/kanbino/callbacks'
+        method: 'POST'
+        bearerToken: ${{ inputs.switch_kanban_api_key }}
+        data: |
+          {
+            "task_execution_id": "${{ inputs.task_execution_id }}",
+            "event": "started",
+            "data": {
+              "mode": "${{ inputs.mode }}",
+              "run_id": "${{ github.run_id }}"
+            }
+          }
+
+    # This step is required to work inside act
+    - name: Setup Claude CLI PATH
+      shell: bash
+      run: |
+        # Add Claude CLI to PATH (workaround for claude-code-base-action)
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        echo "✅ Added $HOME/.local/bin to PATH"
+
+    - name: Prepare allowed tools
+      id: prepare_tools
+      shell: bash
+      run: |
+        DEFAULT_TOOLS="Bash(git:*),View,GlobTool,GrepTool,BatchTool"
+        ADDITIONAL_TOOLS="${{ inputs.additional_allowed_tools }}"
+
+        if [ -n "$ADDITIONAL_TOOLS" ]; then
+          ALLOWED_TOOLS="$DEFAULT_TOOLS,$ADDITIONAL_TOOLS"
+          echo "🔧 Using tools: $ALLOWED_TOOLS"
+        else
+          ALLOWED_TOOLS="$DEFAULT_TOOLS"
+          echo "🔧 Using default tools: $ALLOWED_TOOLS"
+        fi
+
+        echo "allowed_tools=$ALLOWED_TOOLS" >> $GITHUB_OUTPUT
+
+    - name: Run Claude Code
+      id: claude
+      uses: anthropics/claude-code-base-action@beta
+      with:
+        anthropic_api_key: ${{ inputs.claude_api_key }}
+        claude_code_oauth_token: ${{ inputs.claude_code_oauth_token }}
+        allowed_tools: ${{ steps.prepare_tools.outputs.allowed_tools }}
+        prompt: ${{ inputs.task_prompt }}
+        max_turns: 50
+
+    - name: Extract Claude output
+      id: extract_output
+      shell: bash
+      run: |
+        CLAUDE_OUTPUT='{"result": "Execution completed"}'
+        EXECUTION_FILE="${{ steps.claude.outputs.execution_file }}"
+
+        if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
+          echo "📄 Extracting output from execution file: $EXECUTION_FILE"
+          CLAUDE_OUTPUT=$(jq -c '[.[] | select(.role == "assistant")] | last | .content // {"result": "Execution completed"}' "$EXECUTION_FILE" 2>/dev/null || echo '{"result": "Execution completed"}')
+        else
+          echo "⚠️ No execution file found, using default output"
+        fi
+
+        # Save to file for use in HTTP actions
+        echo "$CLAUDE_OUTPUT" > /tmp/claude_output.json
+        echo "output_file=/tmp/claude_output.json" >> $GITHUB_OUTPUT
+
+    - name: Check for changes
+      id: check_changes
+      shell: bash
+      run: |
+        if git diff --quiet 2>/dev/null; then
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "📝 No code changes detected"
+        else
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "📝 Code changes detected"
+        fi
+
+    - name: Prepare planning callback data
+      if: success() && inputs.mode == 'plan'
+      id: plan_data
+      shell: bash
+      run: |
+        CLAUDE_OUTPUT=$(cat /tmp/claude_output.json 2>/dev/null || echo '{"result": "Planning completed"}')
+
+        cat > /tmp/plan_callback.json <<EOF
+        {
+          "task_execution_id": "${{ inputs.task_execution_id }}",
+          "event": "completed",
+          "data": {
+            "mode": "plan",
+            "output": $CLAUDE_OUTPUT,
+            "session_id": "${{ github.run_id }}"
+          }
+        }
+        EOF
+
+    - name: Send planning completed callback
+      if: success() && inputs.mode == 'plan'
+      uses: fjogeleit/http-request-action@v1
+      with:
+        url: '${{ inputs.callback_url }}/api/v1/kanbino/callbacks'
+        method: 'POST'
+        bearerToken: ${{ inputs.switch_kanban_api_key }}
+        file: /tmp/plan_callback.json
+
+    - name: Prepare execution callback data
+      if: success() && inputs.mode == 'execute'
+      id: exec_data
+      shell: bash
+      run: |
+        CLAUDE_OUTPUT=$(cat /tmp/claude_output.json 2>/dev/null || echo '{"result": "Execution completed"}')
+        HAS_CHANGES="${{ steps.check_changes.outputs.has_changes }}"
+        NO_CHANGES=$([ "$HAS_CHANGES" == "false" ] && echo "true" || echo "false")
+
+        cat > /tmp/exec_callback.json <<EOF
+        {
+          "task_execution_id": "${{ inputs.task_execution_id }}",
+          "event": "completed",
+          "data": {
+            "mode": "execute",
+            "output": $CLAUDE_OUTPUT,
+            "no_changes": $NO_CHANGES,
+            "branch_name": "kanbino/task-${{ inputs.task_execution_id }}",
+            "session_id": "${{ github.run_id }}"
+          }
+        }
+        EOF
+
+    - name: Send execution completed callback
+      if: success() && inputs.mode == 'execute'
+      uses: fjogeleit/http-request-action@v1
+      with:
+        url: '${{ inputs.callback_url }}/api/v1/kanbino/callbacks'
+        method: 'POST'
+        bearerToken: ${{ inputs.switch_kanban_api_key }}
+        file: /tmp/exec_callback.json
+
+    - name: Create Pull Request
+      if: inputs.mode == 'execute' && steps.check_changes.outputs.has_changes == 'true' && success()
+      id: create_pr
+      uses: peter-evans/create-pull-request@v6
+      with:
+        token: ${{ inputs.github_token }}
+        branch: kanbino/task-${{ inputs.task_execution_id }}
+        title: '[Kanbino] Task ${{ inputs.task_execution_id }}'
+        commit-message: |
+          feat: Implement task ${{ inputs.task_execution_id }}
+
+          🤖 Automated implementation by Kanbino
+        body: |
+          🤖 **Automated implementation by Kanbino**
+
+          **Task Execution ID:** ${{ inputs.task_execution_id }}
+          **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          **Mode:** ${{ inputs.mode }}
+
+          This PR was automatically generated by the Kanbino AI agent using Claude Code.
+
+          ---
+
+          🔗 [View in Switch Kanban](${{ inputs.callback_url }}/tasks?execution=${{ inputs.task_execution_id }})
+
+    - name: Prepare PR callback data
+      if: inputs.mode == 'execute' && steps.create_pr.outputs.pull-request-number
+      id: pr_data_new
+      shell: bash
+      run: |
+        CLAUDE_OUTPUT=$(cat /tmp/claude_output.json 2>/dev/null || echo '{"result": "Execution completed with PR"}')
+        jq -n \
+          --arg task_id "${{ inputs.task_execution_id }}" \
+          --arg pr_url "${{ steps.create_pr.outputs.pull-request-url }}" \
+          --argjson pr_num "${{ steps.create_pr.outputs.pull-request-number }}" \
+          --arg branch "kanbino/task-${{ inputs.task_execution_id }}" \
+          --arg session "${{ github.run_id }}" \
+          --argjson output "$CLAUDE_OUTPUT" \
+          '{
+            task_execution_id: $task_id,
+            event: "completed",
+            data: {
+              mode: "execute",
+              output: $output,
+              pull_request_url: $pr_url,
+              pull_request_number: $pr_num,
+              branch_name: $branch,
+              session_id: $session
+            }
+          }' > /tmp/pr_callback_new.json
+
+    - name: Send PR update callback new
+      if: inputs.mode == 'execute' && steps.create_pr.outputs.pull-request-number
+      uses: fjogeleit/http-request-action@v1
+      with:
+        url: '${{ inputs.callback_url }}/api/v1/kanbino/callbacks'
+        method: 'POST'
+        bearerToken: ${{ inputs.switch_kanban_api_key }}
+        file: /tmp/pr_callback_new.json
+
+    - name: Prepare failed callback data
+      if: failure()
+      id: failed_data
+      shell: bash
+      continue-on-error: true
+      run: |
+        ERROR_MSG="Execution failed. Check workflow logs for details."
+        EXECUTION_FILE="${{ steps.claude.outputs.execution_file }}"
+
+        if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
+          ERROR_MSG=$(jq -r '[.[] | select(.role == "assistant")] | last | .content // "Execution failed"' "$EXECUTION_FILE" 2>/dev/null || echo "Execution failed. Check workflow logs for details.")
+        fi
+
+        jq -n \
+          --arg task_id "${{ inputs.task_execution_id }}" \
+          --arg error "$ERROR_MSG" \
+          --arg workflow_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          '{
+            task_execution_id: $task_id,
+            event: "failed",
+            data: {
+              error: $error,
+              workflow_url: $workflow_url
+            }
+          }' > /tmp/failed_callback.json
+
+    - name: Send failed callback
+      if: failure()
+      continue-on-error: true
+      uses: fjogeleit/http-request-action@v1
+      with:
+        url: '${{ inputs.callback_url }}/api/v1/kanbino/callbacks'
+        method: 'POST'
+        bearerToken: ${{ inputs.switch_kanban_api_key }}
+        file: /tmp/failed_callback.json
+
+    - name: Determine final status
+      id: determine_status
+      if: always()
+      shell: bash
+      run: |
+        if [ "${{ job.status }}" == "failure" ]; then
+          echo "status=failed" >> $GITHUB_OUTPUT
+        elif [ "${{ steps.check_changes.outputs.has_changes }}" == "false" ]; then
+          echo "status=no_changes" >> $GITHUB_OUTPUT
+        else
+          echo "status=success" >> $GITHUB_OUTPUT
+        fi
