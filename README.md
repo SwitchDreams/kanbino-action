@@ -74,6 +74,7 @@ jobs:
 | `claude_code_oauth_token` | Claude Code OAuth token | No | - |
 | `github_token` | GitHub token for PR creation | No | `${{ github.token }}` |
 | `additional_allowed_tools` | Additional tools to allow (comma-separated) | No | `''` |
+| `skip_switch_kanban_callbacks` | Skip sending callbacks to Switch Kanban (useful for testing) | No | `'false'` |
 
 ### Authentication
 
@@ -221,6 +222,51 @@ jobs:
           claude_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           additional_allowed_tools: "Bash(bundle exec:*),Bash(npm:*)"
 ```
+
+## Testing
+
+### Local Testing with act
+
+Test the action locally using [act](https://github.com/nektos/act):
+
+```bash
+# 1. Install act
+brew install act  # macOS
+
+# 2. Create .secrets file with your credentials
+cat > .secrets <<EOF
+CLAUDE_CODE_OAUTH_TOKEN=your_oauth_token_here
+GITHUB_TOKEN=your_github_token_here
+SWITCH_KANBAN_API_KEY=test-key
+EOF
+
+# 3. Run the test script
+./tests/test-with-act.sh
+```
+
+The test workflow runs the complete action in plan mode with `skip_switch_kanban_callbacks: true` to avoid sending callbacks during testing.
+
+### Testing via GitHub Actions
+
+Trigger the test workflow manually:
+
+```bash
+gh workflow run test-local.yml \
+  --field mode=plan \
+  --field task_prompt="Describe the project structure"
+```
+
+Or use the GitHub UI: **Actions** → **Test Kanbino Action (Local)** → **Run workflow**
+
+### Test Configuration
+
+The test workflow (`.github/workflows/test-local.yml`) accepts:
+- `mode`: Execution mode (`plan` or `execute`)
+- `task_prompt`: Custom prompt for testing
+
+Requires secrets:
+- `CLAUDE_CODE_OAUTH_TOKEN` or `CLAUDE_API_KEY`
+- `GITHUB_TOKEN` (automatically provided by GitHub Actions)
 
 ## Requirements
 

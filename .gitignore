@@ -12,3 +12,11 @@
 
 # Temporary files
 *.tmp
+
+# Secrets for local testing
+.secrets
+
+# Test outputs
+test-output/
+tmp/
+temp/

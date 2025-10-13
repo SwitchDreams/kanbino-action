@@ -1,0 +1,49 @@
+name: Test Kanbino Action (Local)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Execution mode'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - execute
+      task_prompt:
+        description: 'Task prompt to test'
+        required: false
+        default: 'List all files in the current directory and describe the project structure'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Kanbino Action
+        id: kanbino
+        uses: ./
+        with:
+          mode: ${{ inputs.mode }}
+          task_execution_id: test-${{ github.run_id }}
+          task_prompt: ${{ inputs.task_prompt }}
+          skip_switch_kanban_callbacks: 'true'
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test Summary
+        run: |
+          echo "## Kanbino Action Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode:** ${{ inputs.mode }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Task Execution ID:** test-${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ steps.kanbino.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Has Changes:** ${{ steps.kanbino.outputs.has_changes }}" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${{ steps.kanbino.outputs.pull_request_url }}" ]; then
+            echo "- **PR URL:** ${{ steps.kanbino.outputs.pull_request_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **PR Number:** ${{ steps.kanbino.outputs.pull_request_number }}" >> $GITHUB_STEP_SUMMARY
+          fi

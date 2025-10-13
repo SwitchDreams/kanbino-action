@@ -115,14 +115,20 @@ runs:
       id: extract_output
       shell: bash
       run: |
-        CLAUDE_OUTPUT='{"result": "Execution completed"}'
+        CLAUDE_OUTPUT='"Execution completed"'
         EXECUTION_FILE="${{ steps.claude.outputs.execution_file }}"
 
         if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
           echo "📄 Extracting output from execution file: $EXECUTION_FILE"
-          CLAUDE_OUTPUT=$(jq -c '[.[] | select(.role == "assistant")] | last | .content // {"result": "Execution completed"}' "$EXECUTION_FILE" 2>/dev/null || echo '{"result": "Execution completed"}')
+          CLAUDE_OUTPUT=$(jq '[.[] | select(.type == "result")] | last | .result' "$EXECUTION_FILE" 2>/dev/null)
         else
           echo "⚠️ No execution file found, using default output"
+        fi
+
+        # Verificar se está vazio ou é null
+        if [ -z "$CLAUDE_OUTPUT" ] || [ "$CLAUDE_OUTPUT" = "null" ]; then
+          echo "⚠️ No valid output found, using default"
+          CLAUDE_OUTPUT='"Execution completed"'
         fi
 
         # Save to file for use in HTTP actions
@@ -268,11 +274,27 @@ runs:
       shell: bash
       continue-on-error: true
       run: |
-        ERROR_MSG="Execution failed. Check workflow logs for details."
-        EXECUTION_FILE="${{ steps.claude.outputs.execution_file }}"
+        # Try to use already extracted output first
+        ERROR_MSG='${{ steps.extract_output.outputs.claude_output }}'
 
-        if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
-          ERROR_MSG=$(jq -r '[.[] | select(.role == "assistant")] | last | .content // "Execution failed"' "$EXECUTION_FILE" 2>/dev/null || echo "Execution failed. Check workflow logs for details.")
+        # If not available, try extracting from file
+        if [ -z "$ERROR_MSG" ] || [ "$ERROR_MSG" = "null" ] || [ "$ERROR_MSG" = '""' ]; then
+          EXECUTION_FILE="${{ steps.claude.outputs.execution_file }}"
+          if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
+            ERROR_MSG=$(jq '[.[] | select(.type == "result")] | last | .result' "$EXECUTION_FILE" 2>/dev/null)
+            # If extraction failed, use default message
+            if [ -z "$ERROR_MSG" ] || [ "$ERROR_MSG" = "null" ]; then
+              ERROR_MSG="Execution failed. Check workflow logs for details."
+            else
+              # Remove JSON quotes for use with jq --arg
+              ERROR_MSG=$(echo "$ERROR_MSG" | jq -r '.')
+            fi
+          else
+            ERROR_MSG="Execution failed. Check workflow logs for details."
+          fi
+        else
+          # Remove JSON quotes for use with jq --arg
+          ERROR_MSG=$(echo "$ERROR_MSG" | jq -r '.')
         fi
 
         jq -n \
