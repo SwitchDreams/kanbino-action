@@ -158,7 +158,7 @@ runs:
         jq -n \
           --arg task_id "${{ inputs.task_execution_id }}" \
           --arg session "${{ github.run_id }}" \
-          --argjson output "$CLAUDE_OUTPUT" \
+          --arg output "$CLAUDE_OUTPUT" \
           '{
             task_execution_id: $task_id,
             event: "completed",
@@ -191,7 +191,7 @@ runs:
           --arg task_id "${{ inputs.task_execution_id }}" \
           --arg session "${{ github.run_id }}" \
           --arg branch "kanbino/task-${{ inputs.task_execution_id }}" \
-          --argjson output "$CLAUDE_OUTPUT" \
+          --arg output "$CLAUDE_OUTPUT" \
           --argjson no_changes "$NO_CHANGES" \
           '{
             task_execution_id: $task_id,
@@ -251,7 +251,7 @@ runs:
           --argjson pr_num "${{ steps.create_pr.outputs.pull-request-number }}" \
           --arg branch "kanbino/task-${{ inputs.task_execution_id }}" \
           --arg session "${{ github.run_id }}" \
-          --argjson output "$CLAUDE_OUTPUT" \
+          --arg output "$CLAUDE_OUTPUT" \
           '{
             task_execution_id: $task_id,
             event: "completed",
