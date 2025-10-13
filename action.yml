@@ -155,17 +155,19 @@ runs:
       run: |
         CLAUDE_OUTPUT='${{ steps.extract_output.outputs.claude_output }}'
 
-        cat > /tmp/plan_callback.json <<EOF
-        {
-          "task_execution_id": "${{ inputs.task_execution_id }}",
-          "event": "completed",
-          "data": {
-            "mode": "plan",
-            "output": $CLAUDE_OUTPUT,
-            "session_id": "${{ github.run_id }}"
-          }
-        }
-        EOF
+        jq -n \
+          --arg task_id "${{ inputs.task_execution_id }}" \
+          --arg session "${{ github.run_id }}" \
+          --argjson output "$CLAUDE_OUTPUT" \
+          '{
+            task_execution_id: $task_id,
+            event: "completed",
+            data: {
+              mode: "plan",
+              output: $output,
+              session_id: $session
+            }
+          }' > /tmp/plan_callback.json
 
     - name: Send planning completed callback
       if: success() && inputs.mode == 'plan' && inputs.skip_switch_kanban_callbacks != 'true'
@@ -185,19 +187,23 @@ runs:
         HAS_CHANGES="${{ steps.check_changes.outputs.has_changes }}"
         NO_CHANGES=$([ "$HAS_CHANGES" == "false" ] && echo "true" || echo "false")
 
-        cat > /tmp/exec_callback.json <<EOF
-        {
-          "task_execution_id": "${{ inputs.task_execution_id }}",
-          "event": "completed",
-          "data": {
-            "mode": "execute",
-            "output": $CLAUDE_OUTPUT,
-            "no_changes": $NO_CHANGES,
-            "branch_name": "kanbino/task-${{ inputs.task_execution_id }}",
-            "session_id": "${{ github.run_id }}"
-          }
-        }
-        EOF
+        jq -n \
+          --arg task_id "${{ inputs.task_execution_id }}" \
+          --arg session "${{ github.run_id }}" \
+          --arg branch "kanbino/task-${{ inputs.task_execution_id }}" \
+          --argjson output "$CLAUDE_OUTPUT" \
+          --argjson no_changes "$NO_CHANGES" \
+          '{
+            task_execution_id: $task_id,
+            event: "completed",
+            data: {
+              mode: "execute",
+              output: $output,
+              no_changes: $no_changes,
+              branch_name: $branch,
+              session_id: $session
+            }
+          }' > /tmp/exec_callback.json
 
     - name: Send execution completed callback
       if: success() && inputs.mode == 'execute' && inputs.skip_switch_kanban_callbacks != 'true'
