@@ -37,6 +37,10 @@ inputs:
     description: 'Additional allowed tools to append to defaults (comma-separated, e.g., "Bash(bundle exec rubocop:*),Bash(bundle exec rspec:*)")'
     required: false
     default: ''
+  skip_switch_kanban_callbacks:
+    description: 'Skip sending callbacks to Switch Kanban (useful for local testing)'
+    required: false
+    default: 'false'
 
 outputs:
   has_changes:
@@ -56,6 +60,7 @@ runs:
   using: 'composite'
   steps:
     - name: Send started callback
+      if: inputs.skip_switch_kanban_callbacks != 'true'
       uses: fjogeleit/http-request-action@v1
       with:
         url: '${{ inputs.callback_url }}/api/v1/kanbino/callbacks'
@@ -123,6 +128,7 @@ runs:
         # Save to file for use in HTTP actions
         echo "$CLAUDE_OUTPUT" > /tmp/claude_output.json
         echo "output_file=/tmp/claude_output.json" >> $GITHUB_OUTPUT
+        echo "claude_output=$CLAUDE_OUTPUT" >> $GITHUB_OUTPUT
 
     - name: Check for changes
       id: check_changes
@@ -141,7 +147,7 @@ runs:
       id: plan_data
       shell: bash
       run: |
-        CLAUDE_OUTPUT=$(cat /tmp/claude_output.json 2>/dev/null || echo '{"result": "Planning completed"}')
+        CLAUDE_OUTPUT='${{ steps.extract_output.outputs.claude_output }}'
 
         cat > /tmp/plan_callback.json <<EOF
         {
@@ -156,7 +162,7 @@ runs:
         EOF
 
     - name: Send planning completed callback
-      if: success() && inputs.mode == 'plan'
+      if: success() && inputs.mode == 'plan' && inputs.skip_switch_kanban_callbacks != 'true'
       uses: fjogeleit/http-request-action@v1
       with:
         url: '${{ inputs.callback_url }}/api/v1/kanbino/callbacks'
@@ -169,7 +175,7 @@ runs:
       id: exec_data
       shell: bash
       run: |
-        CLAUDE_OUTPUT=$(cat /tmp/claude_output.json 2>/dev/null || echo '{"result": "Execution completed"}')
+        CLAUDE_OUTPUT='${{ steps.extract_output.outputs.claude_output }}'
         HAS_CHANGES="${{ steps.check_changes.outputs.has_changes }}"
         NO_CHANGES=$([ "$HAS_CHANGES" == "false" ] && echo "true" || echo "false")
 
@@ -188,7 +194,7 @@ runs:
         EOF
 
     - name: Send execution completed callback
-      if: success() && inputs.mode == 'execute'
+      if: success() && inputs.mode == 'execute' && inputs.skip_switch_kanban_callbacks != 'true'
       uses: fjogeleit/http-request-action@v1
       with:
         url: '${{ inputs.callback_url }}/api/v1/kanbino/callbacks'
@@ -226,7 +232,7 @@ runs:
       id: pr_data_new
       shell: bash
       run: |
-        CLAUDE_OUTPUT=$(cat /tmp/claude_output.json 2>/dev/null || echo '{"result": "Execution completed with PR"}')
+        CLAUDE_OUTPUT='${{ steps.extract_output.outputs.claude_output }}'
         jq -n \
           --arg task_id "${{ inputs.task_execution_id }}" \
           --arg pr_url "${{ steps.create_pr.outputs.pull-request-url }}" \
@@ -248,7 +254,7 @@ runs:
           }' > /tmp/pr_callback_new.json
 
     - name: Send PR update callback new
-      if: inputs.mode == 'execute' && steps.create_pr.outputs.pull-request-number
+      if: inputs.mode == 'execute' && steps.create_pr.outputs.pull-request-number && inputs.skip_switch_kanban_callbacks != 'true'
       uses: fjogeleit/http-request-action@v1
       with:
         url: '${{ inputs.callback_url }}/api/v1/kanbino/callbacks'
@@ -283,7 +289,7 @@ runs:
           }' > /tmp/failed_callback.json
 
     - name: Send failed callback
-      if: failure()
+      if: failure() && inputs.skip_switch_kanban_callbacks != 'true'
       continue-on-error: true
       uses: fjogeleit/http-request-action@v1
       with:
