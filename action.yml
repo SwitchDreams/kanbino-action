@@ -153,12 +153,10 @@ runs:
       id: plan_data
       shell: bash
       run: |
-        CLAUDE_OUTPUT='${{ steps.extract_output.outputs.claude_output }}'
-
         jq -n \
           --arg task_id "${{ inputs.task_execution_id }}" \
           --arg session "${{ github.run_id }}" \
-          --arg output "$CLAUDE_OUTPUT" \
+          --rawfile output "${{ steps.extract_output.outputs.output_file }}" \
           '{
             task_execution_id: $task_id,
             event: "completed",
@@ -183,7 +181,6 @@ runs:
       id: exec_data
       shell: bash
       run: |
-        CLAUDE_OUTPUT='${{ steps.extract_output.outputs.claude_output }}'
         HAS_CHANGES="${{ steps.check_changes.outputs.has_changes }}"
         NO_CHANGES=$([ "$HAS_CHANGES" == "false" ] && echo "true" || echo "false")
 
@@ -191,7 +188,7 @@ runs:
           --arg task_id "${{ inputs.task_execution_id }}" \
           --arg session "${{ github.run_id }}" \
           --arg branch "kanbino/task-${{ inputs.task_execution_id }}" \
-          --arg output "$CLAUDE_OUTPUT" \
+          --rawfile output "${{ steps.extract_output.outputs.output_file }}" \
           --argjson no_changes "$NO_CHANGES" \
           '{
             task_execution_id: $task_id,
@@ -244,14 +241,13 @@ runs:
       id: pr_data_new
       shell: bash
       run: |
-        CLAUDE_OUTPUT='${{ steps.extract_output.outputs.claude_output }}'
         jq -n \
           --arg task_id "${{ inputs.task_execution_id }}" \
           --arg pr_url "${{ steps.create_pr.outputs.pull-request-url }}" \
           --argjson pr_num "${{ steps.create_pr.outputs.pull-request-number }}" \
           --arg branch "kanbino/task-${{ inputs.task_execution_id }}" \
           --arg session "${{ github.run_id }}" \
-          --arg output "$CLAUDE_OUTPUT" \
+          --rawfile output "${{ steps.extract_output.outputs.output_file }}" \
           '{
             task_execution_id: $task_id,
             event: "completed",
@@ -280,41 +276,37 @@ runs:
       shell: bash
       continue-on-error: true
       run: |
-        # Try to use already extracted output first
-        ERROR_MSG='${{ steps.extract_output.outputs.claude_output }}'
+        OUTPUT_FILE="${{ steps.extract_output.outputs.output_file }}"
 
-        # If not available, try extracting from file
-        if [ -z "$ERROR_MSG" ] || [ "$ERROR_MSG" = "null" ] || [ "$ERROR_MSG" = '""' ]; then
-          EXECUTION_FILE="${{ steps.claude.outputs.execution_file }}"
-          if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
-            ERROR_MSG=$(jq '[.[] | select(.type == "result")] | last | .result' "$EXECUTION_FILE" 2>/dev/null)
-            # If extraction failed, use default message
-            if [ -z "$ERROR_MSG" ] || [ "$ERROR_MSG" = "null" ]; then
-              ERROR_MSG="Execution failed. Check workflow logs for details."
-            else
-              # Remove JSON quotes for use with jq --arg
-              ERROR_MSG=$(echo "$ERROR_MSG" | jq -r '.')
-            fi
-          else
-            ERROR_MSG="Execution failed. Check workflow logs for details."
-          fi
+        # Check if output file exists and is readable
+        if [ -f "$OUTPUT_FILE" ]; then
+          jq -n \
+            --arg task_id "${{ inputs.task_execution_id }}" \
+            --rawfile error "$OUTPUT_FILE" \
+            --arg workflow_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{
+              task_execution_id: $task_id,
+              event: "failed",
+              data: {
+                error: $error,
+                workflow_url: $workflow_url
+              }
+            }' > /tmp/failed_callback.json
         else
-          # Remove JSON quotes for use with jq --arg
-          ERROR_MSG=$(echo "$ERROR_MSG" | jq -r '.')
+          # Fallback to default error message if no output file
+          jq -n \
+            --arg task_id "${{ inputs.task_execution_id }}" \
+            --arg error "Execution failed. Check workflow logs for details." \
+            --arg workflow_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{
+              task_execution_id: $task_id,
+              event: "failed",
+              data: {
+                error: $error,
+                workflow_url: $workflow_url
+              }
+            }' > /tmp/failed_callback.json
         fi
-
-        jq -n \
-          --arg task_id "${{ inputs.task_execution_id }}" \
-          --arg error "$ERROR_MSG" \
-          --arg workflow_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-          '{
-            task_execution_id: $task_id,
-            event: "failed",
-            data: {
-              error: $error,
-              workflow_url: $workflow_url
-            }
-          }' > /tmp/failed_callback.json
 
     - name: Send failed callback
       if: failure() && inputs.skip_switch_kanban_callbacks != 'true'

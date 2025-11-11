@@ -30,7 +30,7 @@ jobs:
           mode: ${{ inputs.mode }}
           task_execution_id: test-${{ github.run_id }}
           task_prompt: ${{ inputs.task_prompt }}
-          callback_url: https://powerful-cricket-28.webhook.cool you can setup a webhook to receive callbacks
+          callback_url: https://kind-raven-11.webhook.cool # you can setup a webhook to receive callbacks
           # skip_switch_kanban_callbacks: 'true'
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
