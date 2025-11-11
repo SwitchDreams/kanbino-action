@@ -23,8 +23,8 @@ inputs:
   switch_kanban_api_key:
     description: 'Switch Kanban API key for callbacks'
     required: true
-  claude_api_key:
-    description: 'Claude API key (Anthropic)'
+  anthropic_api_key:
+    description: 'Anthropic API key'
     required: false
   claude_code_oauth_token:
     description: 'Claude Code OAuth token'
@@ -41,6 +41,10 @@ inputs:
     description: 'Skip sending callbacks to Switch Kanban (useful for local testing)'
     required: false
     default: 'false'
+  claude_settings:
+    description: 'Custom Claude Code settings (JSON format) to override defaults. Example: {"env": {"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic"}}. Note: Use anthropic_api_key input for API key, not env variables.'
+    required: false
+    default: '{}'
 
 outputs:
   has_changes:
@@ -101,21 +105,35 @@ runs:
 
         echo "allowed_tools=$ALLOWED_TOOLS" >> $GITHUB_OUTPUT
 
+    - name: Merge Claude settings with default permissions
+      id: merge_settings
+      shell: bash
+      run: |
+        DEFAULT_PERMISSIONS='{"permissions": {"defaultMode": "acceptEdits"}}'
+
+        if [ "${{ inputs.claude_settings }}" != "{}" ] && [ -n "${{ inputs.claude_settings }}" ]; then
+          # Merge user settings with default permissions
+          MERGED_SETTINGS=$(echo '${{ inputs.claude_settings }}' | jq -s '.[0] * '"$DEFAULT_PERMISSIONS"'')
+          echo "🔧 Merged user settings with default permissions"
+        else
+          # Use only default permissions
+          MERGED_SETTINGS="$DEFAULT_PERMISSIONS"
+          echo "🔧 Using default permissions only"
+        fi
+
+        echo "final_settings=$MERGED_SETTINGS" >> $GITHUB_OUTPUT
+        echo "Final settings: $MERGED_SETTINGS"
+
     - name: Run Claude Code
       id: claude
       uses: anthropics/claude-code-base-action@beta
       with:
-        anthropic_api_key: ${{ inputs.claude_api_key }}
+        anthropic_api_key: ${{ inputs.anthropic_api_key }}
         claude_code_oauth_token: ${{ inputs.claude_code_oauth_token }}
         allowed_tools: ${{ steps.prepare_tools.outputs.allowed_tools }}
         prompt: ${{ inputs.task_prompt }}
         max_turns: 50
-        settings: |
-          {
-            "permissions": {
-              "defaultMode": "acceptEdits"
-            }
-          }
+        settings: ${{ steps.merge_settings.outputs.final_settings }}
 
     - name: Extract Claude output
       id: extract_output

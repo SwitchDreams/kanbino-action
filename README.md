@@ -44,7 +44,7 @@ jobs:
           task_execution_id: ${{ inputs.task_execution_id }}
           task_prompt: "Implement the user authentication feature"
           switch_kanban_api_key: ${{ secrets.SWITCH_KANBAN_API_KEY }}
-          claude_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 ### With Additional Tools
@@ -57,7 +57,7 @@ jobs:
     task_execution_id: ${{ inputs.task_execution_id }}
     task_prompt: "Fix all rubocop issues"
     switch_kanban_api_key: ${{ secrets.SWITCH_KANBAN_API_KEY }}
-    claude_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
     additional_allowed_tools: "Bash(bundle exec rubocop:*),Bash(bundle exec rspec:*)"
 ```
 
@@ -70,7 +70,7 @@ jobs:
 | `task_prompt` | Instructions for Claude to execute | Yes | - |
 | `switch_kanban_api_key` | API key for Switch Kanban callbacks | Yes | - |
 | `callback_url` | URL for status callbacks | No | `https://app.switchkanban.com.br` |
-| `claude_api_key` | Anthropic API key | No | - |
+| `anthropic_api_key` | Anthropic API key | No | - |
 | `claude_code_oauth_token` | Claude Code OAuth token | No | - |
 | `github_token` | GitHub token for PR creation | No | `${{ github.token }}` |
 | `additional_allowed_tools` | Additional tools to allow (comma-separated) | No | `''` |
@@ -78,9 +78,9 @@ jobs:
 
 ### Authentication
 
-You must provide **either** `claude_api_key` **or** `claude_code_oauth_token`:
+You must provide **either** `anthropic_api_key` **or** `claude_code_oauth_token`:
 
-- **`claude_api_key`**: Direct API key from [Anthropic Console](https://console.anthropic.com/)
+- **`anthropic_api_key`**: Direct API key from [Anthropic Console](https://console.anthropic.com/)
 - **`claude_code_oauth_token`**: OAuth token from Claude Code CLI
 
 ## Outputs
@@ -177,7 +177,7 @@ jobs:
           task_execution_id: ${{ inputs.task_execution_id }}
           task_prompt: ${{ inputs.task_prompt }}
           switch_kanban_api_key: ${{ secrets.SWITCH_KANBAN_API_KEY }}
-          claude_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
   execute:
     needs: plan
@@ -190,7 +190,7 @@ jobs:
           task_execution_id: ${{ inputs.task_execution_id }}
           task_prompt: ${{ inputs.task_prompt }}
           switch_kanban_api_key: ${{ secrets.SWITCH_KANBAN_API_KEY }}
-          claude_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 ### With Setup Steps
@@ -219,7 +219,7 @@ jobs:
           task_execution_id: ${{ inputs.task_execution_id }}
           task_prompt: "Add feature X with tests"
           switch_kanban_api_key: ${{ secrets.SWITCH_KANBAN_API_KEY }}
-          claude_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           additional_allowed_tools: "Bash(bundle exec:*),Bash(npm:*)"
 ```
 
@@ -265,7 +265,7 @@ The test workflow (`.github/workflows/test-local.yml`) accepts:
 - `task_prompt`: Custom prompt for testing
 
 Requires secrets:
-- `CLAUDE_CODE_OAUTH_TOKEN` or `CLAUDE_API_KEY`
+- `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`
 - `GITHUB_TOKEN` (automatically provided by GitHub Actions)
 
 ## Requirements

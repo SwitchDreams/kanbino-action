@@ -40,7 +40,7 @@ This is a **GitHub composite action** (not a JavaScript/Docker action), defined 
 ## Authentication
 
 The action accepts **either** (not both):
-- `claude_api_key` - Direct Anthropic API key
+- `anthropic_api_key` - Direct Anthropic API key
 - `claude_code_oauth_token` - OAuth token from Claude Code CLI
 
 These are mutually exclusive and passed directly to the underlying `claude-code-base-action`.

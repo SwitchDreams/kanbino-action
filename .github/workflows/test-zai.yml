@@ -1,0 +1,92 @@
+name: Test Kanbino Action with Z.ai
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Execution mode'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - execute
+      task_prompt:
+        description: 'Task prompt to test'
+        required: false
+        default: 'Create a simple README file with project description'
+
+jobs:
+  test-zai:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Kanbino Action with Z.ai
+        id: kanbino
+        uses: ./
+        with:
+          mode: ${{ inputs.mode }}
+          task_execution_id: zai-test-${{ github.run_id }}
+          task_prompt: ${{ inputs.task_prompt }}
+          callback_url: https://kind-raven-11.webhook.cool # you can setup a webhook to receive callbacks
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          skip_switch_kanban_callbacks: 'true' # Skip callbacks for testing
+          claude_settings: |
+            {
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
+                "API_TIMEOUT_MS": "300000"
+              }
+            }
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test Summary
+        run: |
+          echo "## Kanbino Action Test Results (Z.ai)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode:** ${{ inputs.mode }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Task Execution ID:** zai-test-${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ steps.kanbino.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Has Changes:** ${{ steps.kanbino.outputs.has_changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **AI Provider:** Z.ai" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${{ steps.kanbino.outputs.pull_request_url }}" ]; then
+            echo "- **PR URL:** ${{ steps.kanbino.outputs.pull_request_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **PR Number:** ${{ steps.kanbino.outputs.pull_request_number }}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Comparison test with regular Claude
+  test-claude:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Kanbino Action with Claude
+        id: kanbino-claude
+        uses: ./
+        with:
+          mode: ${{ inputs.mode }}
+          task_execution_id: claude-test-${{ github.run_id }}
+          task_prompt: ${{ inputs.task_prompt }}
+          callback_url: https://kind-raven-11.webhook.cool # you can setup a webhook to receive callbacks
+          skip_switch_kanban_callbacks: 'true' # Skip callbacks for testing
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Claude Test Summary
+        run: |
+          echo "## Kanbino Action Test Results (Claude)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode:** ${{ inputs.mode }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Task Execution ID:** claude-test-${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ steps.kanbino-claude.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Has Changes:** ${{ steps.kanbino-claude.outputs.has_changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **AI Provider:** Claude (Anthropic)" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${{ steps.kanbino-claude.outputs.pull_request_url }}" ]; then
+            echo "- **PR URL:** ${{ steps.kanbino-claude.outputs.pull_request_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **PR Number:** ${{ steps.kanbino-claude.outputs.pull_request_number }}" >> $GITHUB_STEP_SUMMARY
+          fi
