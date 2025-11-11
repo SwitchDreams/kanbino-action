@@ -148,6 +148,9 @@ runs:
           echo "📝 Code changes detected"
         fi
 
+    # ---------------------------------------------------------------------------------
+    # Planning Mode
+    # ---------------------------------------------------------------------------------
     - name: Prepare planning callback data
       if: success() && inputs.mode == 'plan'
       id: plan_data
@@ -175,6 +178,10 @@ runs:
         method: 'POST'
         bearerToken: ${{ inputs.switch_kanban_api_key }}
         file: /tmp/plan_callback.json
+
+    # ---------------------------------------------------------------------------------
+    # End of Planning Mode
+    # ---------------------------------------------------------------------------------
 
     - name: Prepare execution callback data
       if: success() && inputs.mode == 'execute'
