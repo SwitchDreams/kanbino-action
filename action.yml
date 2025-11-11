@@ -224,6 +224,25 @@ runs:
         bearerToken: ${{ inputs.switch_kanban_api_key }}
         file: /tmp/exec_callback.json
 
+    - name: Clean up Claude artifacts before PR
+      if: inputs.mode == 'execute' && steps.check_changes.outputs.has_changes == 'true' && success()
+      shell: bash
+      run: |
+        # Remove Claude configuration and output files
+        echo "🧹 Cleaning up Claude artifacts..."
+
+        # Remove Claude settings file
+        rm -f .claude/settings.local.json
+
+        # Remove output file
+        rm -f output.txt
+
+        # Stage the cleanup (remove these files from git if they were added)
+        git rm -f .claude/settings.local.json 2>/dev/null || true
+        git rm -f output.txt 2>/dev/null || true
+
+        echo "✅ Cleanup completed"
+
     - name: Create Pull Request
       if: inputs.mode == 'execute' && steps.check_changes.outputs.has_changes == 'true' && success()
       id: create_pr
