@@ -110,6 +110,12 @@ runs:
         allowed_tools: ${{ steps.prepare_tools.outputs.allowed_tools }}
         prompt: ${{ inputs.task_prompt }}
         max_turns: 50
+        settings: |
+          {
+            "permissions": {
+              "defaultMode": "acceptEdits"
+            }
+          }
 
     - name: Extract Claude output
       id: extract_output
