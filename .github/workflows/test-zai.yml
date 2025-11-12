@@ -18,6 +18,10 @@ on:
 
 jobs:
   test-zai:
+    env:
+      API_TIMEOUT_MS: 3000000
+      ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ZAI_API_KEY }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,13 +37,6 @@ jobs:
           callback_url: https://kind-raven-11.webhook.cool # you can setup a webhook to receive callbacks
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
           skip_switch_kanban_callbacks: 'true' # Skip callbacks for testing
-          claude_settings: |
-            {
-              "env": {
-                "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
-                "API_TIMEOUT_MS": "300000"
-              }
-            }
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Test Summary
